@@ -18,7 +18,7 @@
 #
 
 import socket, thread, sys, signal, getpass
-import proxy_client, monitor_upstream, ntlm_procs
+import proxy_client, www_client, monitor_upstream, ntlm_procs
 
 #--------------------------------------------------------------
 class AuthProxyServer:
@@ -31,31 +31,13 @@ class AuthProxyServer:
         self.sigLock = thread.allocate_lock() # For locking in the sigHandler
         self.monLock = thread.allocate_lock() # For keeping the monitor thread sane
         self.watchUpstream = 0
-        self.monitor = None
         if not self.config['NTLM_AUTH']['NTLM_TO_BASIC']:
             if not self.config['NTLM_AUTH']['PASSWORD']:
                 tries = 3
                 print '------------------------'
                 while tries and (not self.config['NTLM_AUTH']['PASSWORD']):
                     tries = tries - 1
-                    if self.config['NTLM_AUTH']['COMPLEX_PASSWORD_INPUT']:
-                        try:
-                            import nt
-                        except ImportError:
-                            # Nothing to be done
-                            pass
-                        else:
-                            del nt       # Don't we all wish we could do that?
-                            try:
-                                import win32console
-                            except ImportError:
-                                sys.stderr.write('Unable to load win32console support; complex passwords can not be input.\n')
-                                password_prompt = getpass.getpass
-                            else:
-                                password_prompt = win32console.getpass
-                    else:
-                        password_prompt = getpass.getpass
-                    self.config['NTLM_AUTH']['PASSWORD'] = password_prompt('Your NT password to be used:')
+                    self.config['NTLM_AUTH']['PASSWORD'] = getpass.getpass('Your NT password to be used:')
             if not self.config['NTLM_AUTH']['PASSWORD']:
                 print 'Sorry. PASSWORD is required, bye.'
                 sys.exit(1)
@@ -76,7 +58,6 @@ class AuthProxyServer:
             thread.start_new_thread(self.monitor.run, ())
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind((self.MyHost, self.ListenPort))
         except socket.error:
             print "ERROR: Could not create socket. Possibly port %s is still being used by another process." % self.config['GENERAL']['LISTEN_PORT']
@@ -99,10 +80,21 @@ class AuthProxyServer:
 
     #--------------------------------------------------------------
     def client_run(self, conn, addr):
-        if self.watchUpstream:
-            c = proxy_client.proxy_HTTP_Client(conn, addr, self.config, self.watchUpstream, self.monLock, self.monitor.threadsToKill)
+        if self.config['GENERAL']['PARENT_PROXY']:
+            # working with MS Proxy
+            if self.watchUpstream:
+                # Locking here is really more of a 'nice to have';
+                # if performance suffers on heavy load we can trade
+                # drops here for drops on bad proxy later.
+                self.monLock.acquire()
+                c = proxy_client.proxy_HTTP_Client(conn, addr, self.config)
+                self.monitor.threadsToKill.append(c)
+                self.monLock.release()
+            else:
+                c = proxy_client.proxy_HTTP_Client(conn, addr, self.config)
         else:
-            c = proxy_client.proxy_HTTP_Client(conn, addr, self.config, self.watchUpstream)
+            # working with MS IIS and any other
+            c = www_client.www_HTTP_Client(conn, addr, self.config)
         thread.start_new_thread(c.run, ())
 
     #--------------------------------------------------------------
