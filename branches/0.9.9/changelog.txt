@@ -1,3 +1,6 @@
+Version 0.9.9.0.1 Friday 27th January 2006 Darryl Dixon <esrever_otua@users.sourceforge.net>
+- Minor bugfix for Python 1.5.2 compatibility
+
 Version 0.9.9 Thursday 10th February 2005 Darryl Dixon <esrever_otua@users.sourceforge.net>
 - Re-release 0.9.8.11 as 0.9.9 stable
 
